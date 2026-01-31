@@ -75,7 +75,9 @@ def whoami():
 
 @main.command()
 @click.argument("content")
-def post(content: str):
+@click.option("--ref", "-r", "refs", multiple=True, help="CID to reference (can be used multiple times)")
+@click.option("--tag", "-t", "tags", multiple=True, help="Topic tag (can be used multiple times)")
+def post(content: str, refs: tuple[str, ...], tags: tuple[str, ...]):
     """Sign and publish a post to IPFS."""
     _check_ipfs()
 
@@ -84,19 +86,25 @@ def post(content: str):
         console.print("[red]No identity found.[/red] Run [cyan]dagit init[/cyan] first.")
         raise SystemExit(1)
 
-    cid = messages.publish(content)
+    cid = messages.publish(content, refs=list(refs) or None, tags=list(tags) or None)
 
     # Save to local posts cache
-    posts = _load_json_file(POSTS_FILE, [])
-    posts.append({
+    posts_cache = _load_json_file(POSTS_FILE, [])
+    posts_cache.append({
         "cid": cid,
         "timestamp": datetime.utcnow().isoformat(),
+        "refs": list(refs),
+        "tags": list(tags),
         "content_preview": content[:50] + "..." if len(content) > 50 else content,
     })
-    _save_json_file(POSTS_FILE, posts)
+    _save_json_file(POSTS_FILE, posts_cache)
 
     console.print("[green]Posted![/green]")
     console.print(f"CID: [cyan]{cid}[/cyan]")
+    if refs:
+        console.print(f"Refs: [dim]{', '.join(refs)}[/dim]")
+    if tags:
+        console.print(f"Tags: [dim]{', '.join(tags)}[/dim]")
 
 
 @main.command()
@@ -121,7 +129,8 @@ def read(cid: str):
     author = post_data.get("author", "unknown")
     timestamp = post_data.get("timestamp", "unknown")
     content = post_data.get("content", "")
-    reply_to = post_data.get("reply_to")
+    refs = post_data.get("refs", [])
+    tags = post_data.get("tags", [])
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim")
@@ -130,8 +139,11 @@ def read(cid: str):
     table.add_row("Author:", author[:50] + "..." if len(author) > 50 else author)
     table.add_row("Time:", timestamp)
     table.add_row("CID:", cid)
-    if reply_to:
-        table.add_row("Reply to:", reply_to)
+    if refs:
+        for i, ref in enumerate(refs):
+            table.add_row(f"Ref [{i}]:", ref)
+    if tags:
+        table.add_row("Tags:", ", ".join(tags))
     table.add_row("Status:", status)
 
     console.print(Panel(table, title="Post Metadata", border_style="blue"))
@@ -141,8 +153,9 @@ def read(cid: str):
 @main.command()
 @click.argument("cid")
 @click.argument("content")
-def reply(cid: str, content: str):
-    """Reply to a post."""
+@click.option("--tag", "-t", "tags", multiple=True, help="Topic tag (can be used multiple times)")
+def reply(cid: str, content: str, tags: tuple[str, ...]):
+    """Reply to a post (shorthand for post --ref <cid>)."""
     _check_ipfs()
 
     ident = identity.load()
@@ -150,17 +163,18 @@ def reply(cid: str, content: str):
         console.print("[red]No identity found.[/red] Run [cyan]dagit init[/cyan] first.")
         raise SystemExit(1)
 
-    reply_cid = messages.publish(content, reply_to=cid)
+    reply_cid = messages.publish(content, refs=[cid], tags=list(tags) or None)
 
     # Save to local posts cache
-    posts = _load_json_file(POSTS_FILE, [])
-    posts.append({
+    posts_cache = _load_json_file(POSTS_FILE, [])
+    posts_cache.append({
         "cid": reply_cid,
         "timestamp": datetime.utcnow().isoformat(),
-        "reply_to": cid,
+        "refs": [cid],
+        "tags": list(tags),
         "content_preview": content[:50] + "..." if len(content) > 50 else content,
     })
-    _save_json_file(POSTS_FILE, posts)
+    _save_json_file(POSTS_FILE, posts_cache)
 
     console.print("[green]Reply posted![/green]")
     console.print(f"CID: [cyan]{reply_cid}[/cyan]")

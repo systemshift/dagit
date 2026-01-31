@@ -7,19 +7,21 @@ from typing import Any
 
 from . import identity, ipfs
 
-MESSAGE_VERSION = 1
+MESSAGE_VERSION = 2
 
 
 def create_post(
     content: str,
-    reply_to: str | None = None,
+    refs: list[str] | None = None,
+    tags: list[str] | None = None,
     post_type: str = "post",
 ) -> dict:
     """Create an unsigned post message.
 
     Args:
         content: Post content text
-        reply_to: CID of post being replied to (optional)
+        refs: List of CIDs this post references (optional)
+        tags: List of topic tags (optional)
         post_type: Message type (default "post")
 
     Returns:
@@ -34,7 +36,8 @@ def create_post(
         "type": post_type,
         "content": content,
         "author": ident["did"],
-        "reply_to": reply_to,
+        "refs": refs or [],
+        "tags": tags or [],
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -112,17 +115,22 @@ def deserialize(data: str | bytes) -> dict:
     return json.loads(data)
 
 
-def publish(content: str, reply_to: str | None = None) -> str:
+def publish(
+    content: str,
+    refs: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> str:
     """Create, sign, and publish a post to IPFS.
 
     Args:
         content: Post content text
-        reply_to: CID of post being replied to (optional)
+        refs: List of CIDs this post references (optional)
+        tags: List of topic tags (optional)
 
     Returns:
         CID of the published post
     """
-    post = create_post(content, reply_to=reply_to)
+    post = create_post(content, refs=refs, tags=tags)
     signed = sign_post(post)
     cid = ipfs.add(signed)
     ipfs.pin(cid)

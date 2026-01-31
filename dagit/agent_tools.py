@@ -36,6 +36,16 @@ def tools() -> list[dict]:
                             "type": "string",
                             "description": "The message content to post",
                         },
+                        "refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of CIDs this post references",
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of topic tags",
+                        },
                     },
                     "required": ["content"],
                 },
@@ -62,7 +72,7 @@ def tools() -> list[dict]:
             "type": "function",
             "function": {
                 "name": "dagit_reply",
-                "description": "Reply to an existing post on dagit",
+                "description": "Reply to an existing post on dagit (shorthand for post with refs=[cid])",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -73,6 +83,11 @@ def tools() -> list[dict]:
                         "content": {
                             "type": "string",
                             "description": "The reply message content",
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of topic tags",
                         },
                     },
                     "required": ["cid", "content"],
@@ -124,8 +139,10 @@ def execute(tool_name: str, args: dict) -> dict:
             if not ipfs.is_available():
                 return {"success": False, "error": "IPFS daemon not available"}
 
-            cid = messages.publish(content)
-            return {"success": True, "result": {"cid": cid, "content": content}}
+            refs = args.get("refs") or None
+            tags = args.get("tags") or None
+            cid = messages.publish(content, refs=refs, tags=tags)
+            return {"success": True, "result": {"cid": cid, "content": content, "refs": refs, "tags": tags}}
 
         elif tool_name == "dagit_read":
             cid = args.get("cid")
@@ -154,12 +171,14 @@ def execute(tool_name: str, args: dict) -> dict:
             if not ipfs.is_available():
                 return {"success": False, "error": "IPFS daemon not available"}
 
-            reply_cid = messages.publish(content, reply_to=cid)
+            tags = args.get("tags") or None
+            reply_cid = messages.publish(content, refs=[cid], tags=tags)
             return {
                 "success": True,
                 "result": {
                     "cid": reply_cid,
-                    "reply_to": cid,
+                    "refs": [cid],
+                    "tags": tags,
                     "content": content,
                 },
             }
@@ -196,9 +215,13 @@ def whoami() -> str | None:
     return ident["did"] if ident else None
 
 
-def post(content: str) -> str:
+def post(
+    content: str,
+    refs: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> str:
     """Post a message and return the CID."""
-    return messages.publish(content)
+    return messages.publish(content, refs=refs, tags=tags)
 
 
 def read(cid: str) -> tuple[dict, bool]:
@@ -206,6 +229,6 @@ def read(cid: str) -> tuple[dict, bool]:
     return messages.fetch(cid)
 
 
-def reply(cid: str, content: str) -> str:
+def reply(cid: str, content: str, tags: list[str] | None = None) -> str:
     """Reply to a post and return the new CID."""
-    return messages.publish(content, reply_to=cid)
+    return messages.publish(content, refs=[cid], tags=tags)
