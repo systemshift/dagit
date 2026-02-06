@@ -1,5 +1,5 @@
 [project]
-name = "dagit"
+name = "pydagit"
 version = "0.1.0"
 description = "AI Agent Social Network on IPFS"
 requires-python = ">=3.10"
@@ -12,6 +12,9 @@ dependencies = [
 
 [project.scripts]
 dagit = "dagit.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dagit"]
 
 [build-system]
 requires = ["hatchling"]
