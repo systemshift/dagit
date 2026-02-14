@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from . import identity, ipfs, messages
+from . import identity, ipfs, messages, feed
 
 
 def tools() -> list[dict]:
@@ -111,6 +111,68 @@ def tools() -> list[dict]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "dagit_follow",
+                "description": "Follow a person by their DID. Their posts become discoverable via IPNS feed resolution.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "did": {
+                            "type": "string",
+                            "description": "The DID (did:key:z...) of the person to follow",
+                        },
+                        "alias": {
+                            "type": "string",
+                            "description": "Optional friendly name for this person",
+                        },
+                    },
+                    "required": ["did"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "dagit_unfollow",
+                "description": "Unfollow a person by their DID",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "did": {
+                            "type": "string",
+                            "description": "The DID of the person to unfollow",
+                        },
+                    },
+                    "required": ["did"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "dagit_following",
+                "description": "List all followed DIDs and their feed status",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "dagit_check_feeds",
+                "description": "Poll all followed feeds via IPNS, fetch new posts, verify signatures, and return results",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
     ]
 
 
@@ -142,6 +204,10 @@ def execute(tool_name: str, args: dict) -> dict:
             refs = args.get("refs") or None
             tags = args.get("tags") or None
             cid = messages.publish(content, refs=refs, tags=tags)
+            try:
+                feed.publish_feed(cid)
+            except Exception:
+                pass
             return {"success": True, "result": {"cid": cid, "content": content, "refs": refs, "tags": tags}}
 
         elif tool_name == "dagit_read":
@@ -173,6 +239,10 @@ def execute(tool_name: str, args: dict) -> dict:
 
             tags = args.get("tags") or None
             reply_cid = messages.publish(content, refs=[cid], tags=tags)
+            try:
+                feed.publish_feed(reply_cid)
+            except Exception:
+                pass
             return {
                 "success": True,
                 "result": {
@@ -200,6 +270,29 @@ def execute(tool_name: str, args: dict) -> dict:
                     "cid": cid,
                 },
             }
+
+        elif tool_name == "dagit_follow":
+            did = args.get("did")
+            if not did:
+                return {"success": False, "error": "DID is required"}
+            result = feed.follow(did, alias=args.get("alias"))
+            return {"success": not result.startswith("Error"), "result": result}
+
+        elif tool_name == "dagit_unfollow":
+            did = args.get("did")
+            if not did:
+                return {"success": False, "error": "DID is required"}
+            result = feed.unfollow(did)
+            return {"success": True, "result": result}
+
+        elif tool_name == "dagit_following":
+            return {"success": True, "result": feed.list_following()}
+
+        elif tool_name == "dagit_check_feeds":
+            if not ipfs.is_available():
+                return {"success": False, "error": "IPFS daemon not available"}
+            result = feed.check_feeds()
+            return {"success": True, "result": result}
 
         else:
             return {"success": False, "error": f"Unknown tool: {tool_name}"}
@@ -232,3 +325,23 @@ def read(cid: str) -> tuple[dict, bool]:
 def reply(cid: str, content: str, tags: list[str] | None = None) -> str:
     """Reply to a post and return the new CID."""
     return messages.publish(content, refs=[cid], tags=tags)
+
+
+def follow_did(did: str, alias: str | None = None) -> str:
+    """Follow a DID."""
+    return feed.follow(did, alias=alias)
+
+
+def unfollow_did(did: str) -> str:
+    """Unfollow a DID."""
+    return feed.unfollow(did)
+
+
+def following() -> str:
+    """List followed DIDs."""
+    return feed.list_following()
+
+
+def check_feeds() -> str:
+    """Check all followed feeds."""
+    return feed.check_feeds()

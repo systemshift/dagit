@@ -11,6 +11,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import identity, ipfs, messages
+from . import feed as dagit_feed
 
 console = Console()
 DAGIT_DIR = Path.home() / ".dagit"
@@ -87,6 +88,11 @@ def post(content: str, refs: tuple[str, ...], tags: tuple[str, ...]):
         raise SystemExit(1)
 
     cid = messages.publish(content, refs=list(refs) or None, tags=list(tags) or None)
+
+    try:
+        dagit_feed.publish_feed(cid)
+    except Exception:
+        pass
 
     # Save to local posts cache
     posts_cache = _load_json_file(POSTS_FILE, [])
@@ -165,6 +171,11 @@ def reply(cid: str, content: str, tags: tuple[str, ...]):
 
     reply_cid = messages.publish(content, refs=[cid], tags=list(tags) or None)
 
+    try:
+        dagit_feed.publish_feed(reply_cid)
+    except Exception:
+        pass
+
     # Save to local posts cache
     posts_cache = _load_json_file(POSTS_FILE, [])
     posts_cache.append({
@@ -182,41 +193,30 @@ def reply(cid: str, content: str, tags: tuple[str, ...]):
 
 @main.command()
 @click.argument("did")
-@click.option("--name", "-n", help="Friendly name for this DID")
-def follow(did: str, name: str | None):
-    """Add a DID to your follow list."""
-    if not did.startswith("did:key:"):
-        console.print("[red]Invalid DID format.[/red] Expected: did:key:z6Mk...")
+@click.option("--name", "-n", "alias", help="Friendly name for this DID")
+def follow(did: str, alias: str | None):
+    """Follow a DID. Their posts are discoverable via IPNS."""
+    result = dagit_feed.follow(did, alias=alias)
+    if result.startswith("Error"):
+        console.print(f"[red]{result}[/red]")
         raise SystemExit(1)
+    console.print(f"[green]{result}[/green]")
 
-    following = _load_json_file(FOLLOWING_FILE, [])
 
-    # Check if already following
-    for entry in following:
-        if isinstance(entry, str):
-            if entry == did:
-                console.print(f"[yellow]Already following {did}[/yellow]")
-                return
-        elif isinstance(entry, dict) and entry.get("did") == did:
-            console.print(f"[yellow]Already following {did}[/yellow]")
-            return
-
-    # Add to following list
-    if name:
-        following.append({"did": did, "name": name})
-    else:
-        following.append(did)
-
-    _save_json_file(FOLLOWING_FILE, following)
-    console.print(f"[green]Now following:[/green] {name or did}")
+@main.command()
+@click.argument("did")
+def unfollow(did: str):
+    """Unfollow a DID."""
+    result = dagit_feed.unfollow(did)
+    console.print(result)
 
 
 @main.command()
 def following():
     """List DIDs you follow."""
-    following_list = _load_json_file(FOLLOWING_FILE, [])
+    entries = dagit_feed.load_following()
 
-    if not following_list:
+    if not entries:
         console.print("[dim]Not following anyone yet.[/dim]")
         console.print("Use [cyan]dagit follow <did>[/cyan] to follow someone.")
         return
@@ -224,14 +224,30 @@ def following():
     table = Table(title="Following")
     table.add_column("Name", style="cyan")
     table.add_column("DID", style="dim")
+    table.add_column("Known Posts", justify="right")
 
-    for entry in following_list:
-        if isinstance(entry, str):
-            table.add_row("-", entry)
-        elif isinstance(entry, dict):
-            table.add_row(entry.get("name", "-"), entry.get("did", ""))
+    for entry in entries:
+        name = entry.get("alias") or entry.get("name") or "-"
+        did = entry.get("did", "")
+        n = len(entry.get("lastSeenCids", []))
+        table.add_row(name, did, str(n))
 
     console.print(table)
+
+
+@main.command(name="check-feeds")
+def check_feeds():
+    """Poll all followed feeds via IPNS for new posts."""
+    _check_ipfs()
+
+    if not dagit_feed.has_following():
+        console.print("[dim]Not following anyone.[/dim]")
+        console.print("Use [cyan]dagit follow <did>[/cyan] to follow someone.")
+        return
+
+    console.print("[bold]Checking followed feeds via IPNS...[/bold]\n")
+    result = dagit_feed.check_feeds()
+    console.print(result)
 
 
 @main.command()
