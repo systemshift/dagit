@@ -4,6 +4,7 @@ No dagit-server needed -- pure IPFS.
 """
 
 import base64
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -19,6 +20,39 @@ FOLLOWING_FILE = DAGIT_DIR / "following.json"
 FEED_FILE = DAGIT_DIR / "feed.json"
 KEY_NAME = "dagit-did"
 MAX_FEED_ENTRIES = 100
+
+# --- Petname generator (deterministic adjective-noun from DID) ---
+
+_ADJECTIVES = [
+    "amber", "azure", "bold", "bright", "calm", "clear", "cool", "coral",
+    "crimson", "dark", "deep", "dry", "dusk", "faint", "fast", "firm",
+    "gold", "green", "grey", "haze", "iron", "keen", "kind", "late",
+    "light", "live", "long", "loud", "low", "mild", "mint", "mist",
+    "moss", "near", "new", "next", "north", "odd", "old", "open",
+    "pale", "pine", "plain", "proud", "pure", "quick", "quiet", "rare",
+    "raw", "red", "rich", "sage", "salt", "sand", "sharp", "shy",
+    "silk", "slim", "slow", "soft", "south", "steel", "still", "stone",
+]
+
+_NOUNS = [
+    "ash", "bay", "birch", "bloom", "brook", "cave", "cedar", "cliff",
+    "cloud", "coal", "cove", "crane", "creek", "crow", "dawn", "deer",
+    "dove", "dune", "dusk", "eagle", "elm", "ember", "fern", "finch",
+    "fire", "flint", "fox", "frost", "gale", "glen", "grove", "hawk",
+    "haze", "heath", "heron", "hill", "ivy", "jade", "jay", "lake",
+    "lark", "leaf", "marsh", "mesa", "moon", "oak", "owl", "peak",
+    "pine", "pond", "rain", "reed", "ridge", "rock", "rose", "sage",
+    "shade", "shore", "sky", "snow", "star", "storm", "stone", "vale",
+]
+
+
+def petname_from_did(did: str) -> str:
+    """Generate a deterministic adjective-noun name from a DID."""
+    h = hashlib.sha256(did.encode()).digest()
+    adj = _ADJECTIVES[h[0] % len(_ADJECTIVES)]
+    noun = _NOUNS[h[1] % len(_NOUNS)]
+    return f"{adj}-{noun}"
+
 
 # --- Base36 encoder (no deps) ---
 
@@ -161,6 +195,8 @@ def follow(did: str, alias: str | None = None) -> str:
     if any(e["did"] == did for e in entries):
         return f"Already following {did}"
 
+    if alias is None:
+        alias = petname_from_did(did)
     entries.append({
         "did": did,
         "alias": alias,
@@ -168,7 +204,7 @@ def follow(did: str, alias: str | None = None) -> str:
         "lastSeenCids": [],
     })
     save_following(entries)
-    return f"Now following {alias or did}"
+    return f"Now following {alias} ({did[-12:]})"
 
 
 def unfollow(did: str) -> str:
