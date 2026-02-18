@@ -9,7 +9,8 @@ from nacl.encoding import RawEncoder
 from nacl.exceptions import BadSignatureError
 
 DAGIT_DIR = Path.home() / ".dagit"
-IDENTITY_FILE = DAGIT_DIR / "identity.json"
+MEMEX_CONFIG_DIR = Path.home() / ".config" / "memex"
+IDENTITY_FILE = MEMEX_CONFIG_DIR / "identity.json"
 
 # Multicodec prefix for Ed25519 public key (0xed01)
 ED25519_MULTICODEC = b"\xed\x01"
@@ -68,7 +69,7 @@ def create() -> dict:
     Returns:
         dict with 'did', 'public_key', and 'private_key' (all base64)
     """
-    DAGIT_DIR.mkdir(parents=True, exist_ok=True)
+    MEMEX_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
     signing_key = SigningKey.generate()
     verify_key = signing_key.verify_key
